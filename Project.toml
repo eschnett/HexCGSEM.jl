@@ -1,0 +1,19 @@
+name = "HexCGSEM"
+uuid = "527ce69b-967c-43f6-b7d4-68e2f4f577e3"
+authors = ["Erik Schnetter <schnetter@gmail.com>"]
+version = "0.1.0"
+
+[deps]
+HexMeshes = "6a780a60-7728-4ca8-aa44-e8f4e6fd1153"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+PolynomialBases = "c74db56a-226d-5e98-8bb0-a6049094aeea"
+SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
+StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+
+[compat]
+HexMeshes = "1.5"
+LinearAlgebra = "1.10"
+PolynomialBases = "0.4.25"
+SparseArrays = "1.10"
+StaticArrays = "1.9"
+julia = "1.10"

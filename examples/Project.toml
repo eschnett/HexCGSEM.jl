@@ -1,0 +1,6 @@
+[deps]
+HexCGSEM = "527ce69b-967c-43f6-b7d4-68e2f4f577e3"
+HexMeshes = "6a780a60-7728-4ca8-aa44-e8f4e6fd1153"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
+StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"

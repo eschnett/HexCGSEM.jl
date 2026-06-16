@@ -1,0 +1,6 @@
+/Manifest.toml
+/docs/build/
+/docs/Manifest.toml
+/examples/Manifest.toml
+/examples/output/
+*.cov
