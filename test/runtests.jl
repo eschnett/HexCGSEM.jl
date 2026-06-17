@@ -23,4 +23,6 @@ _progress(msg) = (printstyled(stderr, "  • ", msg, "\n"; color = :cyan); flush
     include("test_solve_shell_3d.jl")
     _section("test_solve_compact_3d.jl")
     include("test_solve_compact_3d.jl")
+    _section("test_solve_two_hole.jl")
+    include("test_solve_two_hole.jl")
 end
