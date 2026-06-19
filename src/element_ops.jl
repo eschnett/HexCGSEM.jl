@@ -147,3 +147,83 @@ function element_matrices(mesh::Mesh{D}, e::Integer, tq::TensorQuadrature{D, T})
 
     return Ke, Me
 end
+
+"""
+    stiffness_scratch(tq::TensorQuadrature{D, T}) → (Ke, tmp, cW)
+
+Allocate the reusable work buffers for [`element_stiffness!`](@ref): the output
+matrix `Ke` (`nl × nl`), the gemm scratch `tmp` (`nq × nl`), and the metric
+buffer `cW` (`D × D` vectors of length `nq`). Allocate once per thread/chunk and
+reuse across that chunk's elements to avoid per-element allocation.
+"""
+function stiffness_scratch(tq::TensorQuadrature{D, T}) where {D, T}
+    Ke = Matrix{T}(undef, tq.nl, tq.nl)
+    tmp = Matrix{T}(undef, tq.nq, tq.nl)
+    cW = Matrix{Vector{T}}(undef, D, D)
+    for i in 1:D, j in 1:D
+        cW[i, j] = Vector{T}(undef, tq.nq)
+    end
+    return Ke, tmp, cW
+end
+
+"""
+    element_stiffness!(Ke, tmp, cW, mesh::Mesh{D}, e, tq::TensorQuadrature{D, T}) → Ke
+
+Stiffness-only variant of [`element_matrices`](@ref): compute just `Ke` into the
+caller-provided buffers (see [`stiffness_scratch`](@ref)), skipping the mass
+matrix. Allocation-free, so it can be called in a tight (threaded) loop.
+"""
+function element_stiffness!(Ke, tmp, cW, mesh::Mesh{D}, e::Integer,
+                            tq::TensorQuadrature{D, T}) where {D, T}
+    nq = tq.nq
+    @inbounds for qf in 1:nq
+        _, J = element_point_and_jac(mesh, e, tq.ξ[qf])
+        dJ = abs(det(J))
+        Ji = inv(J)
+        W = dJ * (Ji * transpose(Ji))
+        w = tq.wref[qf]
+        for j in 1:D, i in 1:D
+            cW[i, j][qf] = w * W[i, j]
+        end
+    end
+    fill!(Ke, zero(T))
+    @inbounds for i in 1:D, j in 1:D
+        tmp .= cW[i, j] .* tq.B[j]
+        mul!(Ke, transpose(tq.B[i]), tmp, one(T), one(T))
+    end
+    return Ke
+end
+
+"""
+    mass_scratch(tq::TensorQuadrature{D, T}) → (Me, tmp, md)
+
+Allocate the reusable work buffers for [`element_mass!`](@ref): the output matrix
+`Me` (`nl × nl`), the gemm scratch `tmp` (`nq × nl`), and the mass-weight buffer
+`md` (length `nq`). Allocate once per thread/chunk and reuse.
+"""
+function mass_scratch(tq::TensorQuadrature{D, T}) where {D, T}
+    Me = Matrix{T}(undef, tq.nl, tq.nl)
+    tmp = Matrix{T}(undef, tq.nq, tq.nl)
+    md = Vector{T}(undef, tq.nq)
+    return Me, tmp, md
+end
+
+"""
+    element_mass!(Me, tmp, md, mesh::Mesh{D}, e, tq::TensorQuadrature{D, T}) → Me
+
+Mass-only variant of [`element_matrices`](@ref): compute just `Me` into the
+caller-provided buffers (see [`mass_scratch`](@ref)), skipping the stiffness
+matrix. Allocation-free.
+"""
+function element_mass!(Me, tmp, md, mesh::Mesh{D}, e::Integer,
+                       tq::TensorQuadrature{D, T}) where {D, T}
+    nq = tq.nq
+    @inbounds for qf in 1:nq
+        _, J = element_point_and_jac(mesh, e, tq.ξ[qf])
+        md[qf] = tq.wref[qf] * abs(det(J))
+    end
+    fill!(Me, zero(T))
+    tmp .= md .* tq.V
+    mul!(Me, transpose(tq.V), tmp, one(T), one(T))
+    return Me
+end

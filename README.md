@@ -22,3 +22,20 @@ Status: under construction (see the milestone plan). Currently implemented:
   basis) and `QuadratureRule` (Gauss over-integration) on the reference interval
   `[0, 1]`, plus the GLL→Gauss interpolation matrices used to de-alias
   curvilinear element operators.
+
+## Performance / threading
+
+Global assembly (`assemble_stiffness`, `assemble_mass`) is the dominant cost at
+high resolution and is multithreaded over mesh elements. Start Julia with
+`-t N` (or set `JULIA_NUM_THREADS=N`) to use it; on a many-core node also set
+`JULIA_EXCLUSIVE=1` to pin threads to cores:
+
+```sh
+JULIA_EXCLUSIVE=1 julia -t 64 --project=examples examples/solve_two_ball.jl
+```
+
+Assembly pins BLAS to a single thread while the element loop is threaded (to
+avoid Julia-threads × BLAS-threads oversubscription) and restores it afterwards;
+a single-threaded run leaves BLAS untouched. Speedup is bandwidth-bound and
+saturates well before 64 cores (≈10× on a 64-core node for a degree-4 3D mesh):
+the per-element kernels parallelize, but the final sparse-matrix build is serial.

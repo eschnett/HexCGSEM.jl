@@ -15,6 +15,8 @@ _progress(msg) = (printstyled(stderr, "  • ", msg, "\n"; color = :cyan); flush
     include("test_dofmap.jl")
     _section("test_element_ops.jl")
     include("test_element_ops.jl")
+    _section("test_assembly.jl")
+    include("test_assembly.jl")
     _section("test_solve.jl")
     include("test_solve.jl")
     _section("test_solve_robin.jl")
