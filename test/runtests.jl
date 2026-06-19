@@ -19,6 +19,8 @@ _progress(msg) = (printstyled(stderr, "  • ", msg, "\n"; color = :cyan); flush
     include("test_assembly.jl")
     _section("test_solve.jl")
     include("test_solve.jl")
+    _section("test_solve_iterative.jl")
+    include("test_solve_iterative.jl")
     _section("test_solve_robin.jl")
     include("test_solve_robin.jl")
     _section("test_solve_shell_3d.jl")
@@ -27,4 +29,6 @@ _progress(msg) = (printstyled(stderr, "  • ", msg, "\n"; color = :cyan); flush
     include("test_solve_compact_3d.jl")
     _section("test_solve_two_hole.jl")
     include("test_solve_two_hole.jl")
+    _section("test_solve_two_ball.jl")
+    include("test_solve_two_ball.jl")
 end

@@ -29,7 +29,9 @@ ids.
 * `boundary.jl`          — `boundary_dofs` (tagged boundary DOFs) and the Robin
                            surface-integral assembly.
 * `solve.jl`             — `solve_dirichlet`, the reduced-system sparse Cholesky
-                           solve.
+                           solve, and `solve_dirichlet_cg`, the matrix-free
+                           Jacobi-preconditioned CG solve (`StiffnessOperator`)
+                           that never assembles the global `K`.
 """
 module HexCGSEM
 
@@ -47,5 +49,6 @@ export TensorQuadrature, element_matrices
 export node_coords, dof_coords
 export assemble_stiffness, assemble_mass, assemble_load
 export boundary_dofs, assemble_robin, solve_dirichlet
+export StiffnessOperator, stiffness_diagonal, solve_dirichlet_cg
 
 end # module HexCGSEM
