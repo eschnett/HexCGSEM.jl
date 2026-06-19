@@ -264,7 +264,7 @@ function solve_dirichlet_cg(dof::DofHandler{D}, mesh::Mesh{D}, tq::TensorQuadrat
     progress = function (workspace)
         rs = workspace.stats.residuals
         k = length(rs)
-        if (k - 1) % _CG_PROGRESS_STRIDE == 0
+        if k == 1 || k % _CG_PROGRESS_STRIDE == 0
             r = rs[end]
             printstyled(stderr, "    cg: iter $(lpad(k, 5))   ‖r‖ = $(round(r; sigdigits = 3))\n";
                         color = :light_black)
