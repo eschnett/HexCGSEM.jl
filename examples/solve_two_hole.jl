@@ -30,8 +30,10 @@ info(msg) = (println("    ", msg); flush(stdout))
 
 # `solver = :cholesky` assembles the global stiffness matrix and factors it
 # (sparse Cholesky); `solver = :cg` never assembles it — the operator is applied
-# matrix-free and the system solved with Jacobi-preconditioned CG.
-function solve_case(; mode, d, R1 = 1.0, R2 = 100.0, M = 4, p = 7, solver = :cholesky)
+# matrix-free and the system solved with Jacobi-preconditioned CG. For `:cg`,
+# `backend` selects the element operator: `:dense` (stored element matrices) or
+# `:sumfac` (sum-factorization; only the metric is stored).
+function solve_case(; mode, d, R1 = 1.0, R2 = 100.0, M = 4, p = 7, solver = :cholesky, backend = :dense)
     p1 = (d / 2, 0.0)
     p2 = (-d / 2, 0.0)
     uex(x) = log(hypot(x[1] - p1[1], x[2] - p1[2])) + log(hypot(x[1] - p2[1], x[2] - p2[2]))
@@ -53,9 +55,9 @@ function solve_case(; mode, d, R1 = 1.0, R2 = 100.0, M = 4, p = 7, solver = :cho
     niter = 0
     if solver === :cg
         t_solve = @elapsed ((u, stats) = solve_dirichlet_cg(dof, mesh, tq, zeros(dof.ndofs), dvals;
-                                                            rtol = 1.0e-10))
+                                                            rtol = 1.0e-10, backend = backend, verbose = false))
         niter = stats.niter
-        info(@sprintf("solved (matrix-free Jacobi-CG, %d iters)  (%.3f s)", niter, t_solve))
+        info(@sprintf("solved (matrix-free Jacobi-CG/%s, %d iters)  (%.3f s)", backend, niter, t_solve))
     else
         t_asm = @elapsed K = assemble_stiffness(dof, mesh, tq)
         info(@sprintf("stiffness assembled: %d nonzeros  (%.3f s)", nnz(K), t_asm))
@@ -65,7 +67,7 @@ function solve_case(; mode, d, R1 = 1.0, R2 = 100.0, M = 4, p = 7, solver = :cho
 
     linf = maximum(abs(u[g] - uex(Xg[g])) for g in eachindex(u))
     info(@sprintf("L∞ error = %.3e", linf))
-    return (; mesh, refel, dof, u, uex, ndofs = dof.ndofs, t_solve, niter, solver, linf)
+    return (; mesh, refel, dof, u, uex, ndofs = dof.ndofs, t_solve, niter, solver, backend, linf)
 end
 
 # Per-node physical coords, solution value, and |error| (for scatter plots).
@@ -97,16 +99,20 @@ function main()
     res_sep = solve_case(; mode = :separated, d = 10.0)
     res_tou = solve_case(; mode = :touching, d = 4.0)
 
-    # Same problems solved matrix-free with Jacobi-CG (no global matrix assembled).
-    res_sep_cg = solve_case(; mode = :separated, d = 10.0, solver = :cg)
-    res_tou_cg = solve_case(; mode = :touching, d = 4.0, solver = :cg)
+    # Same problems solved matrix-free with Jacobi-CG (no global matrix assembled),
+    # with both element backends (:dense stored matrices, :sumfac sum-factorization).
+    res_sep_cg = solve_case(; mode = :separated, d = 10.0, solver = :cg, backend = :dense)
+    res_sep_sf = solve_case(; mode = :separated, d = 10.0, solver = :cg, backend = :sumfac)
+    res_tou_cg = solve_case(; mode = :touching, d = 4.0, solver = :cg, backend = :dense)
+    res_tou_sf = solve_case(; mode = :touching, d = 4.0, solver = :cg, backend = :sumfac)
 
     phase("Summary")
-    @printf("  %-24s %9s %12s %10s %13s\n", "setup", "DOFs", "solver", "solve [s]", "L∞ error")
+    @printf("  %-24s %9s %16s %10s %13s\n", "setup", "DOFs", "solver", "solve [s]", "L∞ error")
     for (name, r) in (("well-separated (d=10)", res_sep), ("well-separated (d=10)", res_sep_cg),
-                      ("close (d=4)", res_tou), ("close (d=4)", res_tou_cg))
-        tag = r.solver === :cg ? @sprintf("CG (%d it)", r.niter) : "Cholesky"
-        @printf("  %-24s %9d %12s %10.3f %13.3e\n", name, r.ndofs, tag, r.t_solve, r.linf)
+                      ("well-separated (d=10)", res_sep_sf), ("close (d=4)", res_tou),
+                      ("close (d=4)", res_tou_cg), ("close (d=4)", res_tou_sf))
+        tag = r.solver === :cg ? @sprintf("CG/%s (%d it)", r.backend, r.niter) : "Cholesky"
+        @printf("  %-24s %9d %16s %10.3f %13.3e\n", name, r.ndofs, tag, r.t_solve, r.linf)
     end
 
     phase("Scatter-plot visualization (per-element nodes, zoomed on the holes)")

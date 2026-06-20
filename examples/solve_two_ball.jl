@@ -32,9 +32,12 @@ info(msg) = (println("    ", msg); flush(stdout))
 # outer ∈ (:dirichlet, :sommerfeld, :compactified); solver ∈ (:cholesky, :cg).
 # `:cg` applies the stiffness operator matrix-free (Jacobi-preconditioned CG) and
 # never assembles the global matrix; the small Robin matrix is still assembled.
+# `backend ∈ (:dense, :sumfac)` selects the `:cg` element operator (sum-factorization
+# stores only the metric — the choice for memory-bound high-order 3D).
 function solve_case(; outer, R1 = 1.0, R2 = 100.0, d = 10.0, M = 2, p = 3,
                     L = nothing, A = nothing, R_mid = nothing,
-                    M_h = 2, M_b = 2, M_i = 2, M_s = 2, mode = :separated, solver = :cholesky)
+                    M_h = 2, M_b = 2, M_i = 2, M_s = 2, mode = :separated,
+                    solver = :cholesky, backend = :dense)
     a = d / 2
     uex(x) = 1 / hypot(x[1] - a, x[2], x[3]) + 1 / hypot(x[1] + a, x[2], x[3])
     phase("Outer boundary: $outer")
@@ -67,11 +70,11 @@ function solve_case(; outer, R1 = 1.0, R2 = 100.0, d = 10.0, M = 2, p = 3,
 
     niter = 0
     if solver === :cg
-        t_solve = @elapsed ((u, stats) = solve_dirichlet_cg(dof, mesh, tq, b, dvals;
-                                                            Krob = Krob, brob = brob, rtol = 1.0e-10))
+        t_solve = @elapsed ((u, stats) = solve_dirichlet_cg(dof, mesh, tq, b, dvals; Krob = Krob, brob = brob,
+                                                            rtol = 1.0e-10, backend = backend, verbose = false))
         niter = stats.niter
-        info(@sprintf("solved (matrix-free Jacobi-CG, %d iters, solved=%s)  (%.3f s)",
-                      niter, stats.solved, t_solve))
+        info(@sprintf("solved (matrix-free Jacobi-CG/%s, %d iters, solved=%s)  (%.3f s)",
+                      backend, niter, stats.solved, t_solve))
     else
         t_asm = @elapsed K = assemble_stiffness(dof, mesh, tq)
         info(@sprintf("stiffness assembled: %d nonzeros  (%.3f s)", nnz(K), t_asm))
@@ -83,7 +86,7 @@ function solve_case(; outer, R1 = 1.0, R2 = 100.0, d = 10.0, M = 2, p = 3,
 
     linf = maximum(abs(u[g] - uex(Xg[g])) for g in eachindex(u) if isfinite(Xg[g][1]))
     info(@sprintf("L∞ error = %.3e", linf))
-    return (; mesh, refel, dof, u, uex, d, R1, R2eff, ndofs = dof.ndofs, t_solve, niter, solver, linf, outer)
+    return (; mesh, refel, dof, u, uex, d, R1, R2eff, ndofs = dof.ndofs, t_solve, niter, solver, backend, linf, outer)
 end
 
 # Evaluate the solution and |error| on the z = 0 plane over an n×n grid covering
@@ -127,18 +130,22 @@ function main()
     res_s = solve_case(; outer = :sommerfeld)
     res_c = solve_case(; outer = :compactified)
 
-    # Same problems solved matrix-free with Jacobi-CG (no global matrix assembled).
-    res_d_cg = solve_case(; outer = :dirichlet, solver = :cg)
-    res_s_cg = solve_case(; outer = :sommerfeld, solver = :cg)
-    res_c_cg = solve_case(; outer = :compactified, solver = :cg)
+    # Same problems solved matrix-free with Jacobi-CG (no global matrix assembled),
+    # with both element backends (:dense stored matrices, :sumfac sum-factorization).
+    res_d_cg = solve_case(; outer = :dirichlet, solver = :cg, backend = :dense)
+    res_d_sf = solve_case(; outer = :dirichlet, solver = :cg, backend = :sumfac)
+    res_s_cg = solve_case(; outer = :sommerfeld, solver = :cg, backend = :dense)
+    res_s_sf = solve_case(; outer = :sommerfeld, solver = :cg, backend = :sumfac)
+    res_c_cg = solve_case(; outer = :compactified, solver = :cg, backend = :dense)
+    res_c_sf = solve_case(; outer = :compactified, solver = :cg, backend = :sumfac)
 
     phase("Summary")
-    @printf("  %-26s %9s %12s %10s %13s\n", "outer boundary", "DOFs", "solver", "solve [s]", "L∞ error")
-    for (name, r) in (("finite + Dirichlet", res_d), ("finite + Dirichlet", res_d_cg),
-                      ("finite + Sommerfeld", res_s), ("finite + Sommerfeld", res_s_cg),
-                      ("compactified (i⁰)", res_c), ("compactified (i⁰)", res_c_cg))
-        tag = r.solver === :cg ? @sprintf("CG (%d it)", r.niter) : "Cholesky"
-        @printf("  %-26s %9d %12s %10.3f %13.3e\n", name, r.ndofs, tag, r.t_solve, r.linf)
+    @printf("  %-26s %9s %16s %10s %13s\n", "outer boundary", "DOFs", "solver", "solve [s]", "L∞ error")
+    for (name, r) in (("finite + Dirichlet", res_d), ("finite + Dirichlet", res_d_cg), ("finite + Dirichlet", res_d_sf),
+                      ("finite + Sommerfeld", res_s), ("finite + Sommerfeld", res_s_cg), ("finite + Sommerfeld", res_s_sf),
+                      ("compactified (i⁰)", res_c), ("compactified (i⁰)", res_c_cg), ("compactified (i⁰)", res_c_sf))
+        tag = r.solver === :cg ? @sprintf("CG/%s (%d it)", r.backend, r.niter) : "Cholesky"
+        @printf("  %-26s %9d %16s %10.3f %13.3e\n", name, r.ndofs, tag, r.t_solve, r.linf)
     end
 
     phase("z = 0 slice visualization (plane through both ball centres)")

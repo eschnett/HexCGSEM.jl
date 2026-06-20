@@ -34,16 +34,20 @@ _maxerr(u, uex, Xg) = maximum(abs(u[g] - uex(Xg[g])) for g in eachindex(u))
 
             K = assemble_stiffness(dof, mesh, tq)
             free = collect(1:dof.ndofs)
-            op = StiffnessOperator(dof, mesh, tq; free = free)
-
-            # Operator action equals K·x for random x (full free set = all DOFs).
             x = randn(dof.ndofs)
-            y = similar(x)
-            mul!(y, op, x)
-            @test y ≈ K * x rtol = 1.0e-10
+            Kx = K * x
 
-            # Matrix-free diagonal equals diag(K) exactly (same scatter).
-            @test stiffness_diagonal(op) == diag(K)
+            @testset "backend=$backend" for backend in (:dense, :sumfac)
+                op = StiffnessOperator(dof, mesh, tq; free = free, backend = backend)
+
+                # Operator action equals K·x for random x (full free set = all DOFs).
+                y = similar(x)
+                mul!(y, op, x)
+                @test y ≈ Kx rtol = 1.0e-10
+
+                # Matrix-free diagonal equals diag(K).
+                @test stiffness_diagonal(op) ≈ diag(K) rtol = 1.0e-10
+            end
 
             # Gather/scatter plumbing: scattering all-ones locals gives multiplicity.
             ones_local = ones(dof.nlocal, mesh.Ne)
@@ -124,6 +128,32 @@ end
         _progress("2D Robin multipole k=$k p=$p  niter=$(stats.niter)  err=$(_maxerr(ucg, uex, Xg))")
         @test stats.solved
         @test ucg ≈ uchol rtol = 1.0e-9
+    end
+end
+
+@testset "sumfac backend reproduces dense solve (2D annulus + 3D two_ball)" begin
+    uex2(x) = log(sqrt(x[1]^2 + x[2]^2))
+    uex3(x) = 1 / hypot(x[1] - 5.0, x[2], x[3]) + 1 / hypot(x[1] + 5.0, x[2], x[3])
+    cases = (
+        (2, "annulus", make_annulus_mesh(Float64, 1.0, 2.0, 2; outer_bc = :dirichlet, inner_bc = :dirichlet), 5, uex2),
+        (3, "two_ball", make_two_ball_mesh(Float64, 1.0, 100.0, 10.0, 2;
+                                           M_h = 2, M_b = 2, M_i = 2, M_s = 2,
+                                           outer_bc = :dirichlet, mode = :separated), 3, uex3),
+    )
+    @testset "$label (D=$D)" for (D, label, mesh, p, uex) in cases
+        refel = ReferenceElement(Float64, p)
+        dof = DofHandler(mesh, p)
+        tq = TensorQuadrature(refel, QuadratureRule(refel, 2p), Val(D))
+        Xg = dof_coords(dof, mesh, refel)
+        finite(g) = isfinite(Xg[g][1])
+        dvals = Dict(g => (finite(g) ? uex(Xg[g]) : 0.0) for g in boundary_dofs(dof, mesh))
+        b = zeros(dof.ndofs)
+        ud, sd = solve_dirichlet_cg(dof, mesh, tq, b, dvals; rtol = 1.0e-10, verbose = false, backend = :dense)
+        us, ss = solve_dirichlet_cg(dof, mesh, tq, b, dvals; rtol = 1.0e-10, verbose = false, backend = :sumfac)
+        _progress("$label p=$p  niter dense=$(sd.niter) sumfac=$(ss.niter)")
+        @test ss.solved
+        @test ss.niter == sd.niter           # identical operator ⇒ identical CG path
+        @test us ≈ ud rtol = 1.0e-9
     end
 end
 
